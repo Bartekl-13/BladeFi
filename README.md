@@ -8,7 +8,7 @@
 
 BladeFi is a perpetuals protocol, which allows users (traders) to use leverage for their long/short positions.
 </br></br>
-The liquidity in the protocol is provided by LPs - liquidity providers, who earn share tokens with a ratio 1:1 to supplied tokens.
+The liquidity in the protocol is provided by LPs - liquidity providers, who earn share tokens with a 1:1 ratio to supplied tokens.
 </br></br>
 In this simplified implementation of a protocol, no fees or P&L payouts are calculated.
 </br></br>
