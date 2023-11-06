@@ -1,66 +1,30 @@
-## Foundry
+# BladeFi
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+## A simplified perpetuals DeFi protocol.
 
-Foundry consists of:
+---
 
--   **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
--   **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
--   **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
--   **Chisel**: Fast, utilitarian, and verbose solidity REPL.
+### How does it work?
 
-## Documentation
+BladeFi is a perpetuals protocol, which allows users (traders) to use leverage for their long/short positions.
+</br></br>
+The liquidity in the protocol is provided by LPs - liquidity providers, who earn share tokens with a 1:1 ratio to supplied tokens.
+</br></br>
+In this simplified implementation of a protocol, no fees or P&L payouts are calculated.
+</br></br>
+The realtime value of liquidity pools and open interest are tracked, to ensure no money meant for a beneficiary of a successful trade is taken out of the system before payout.
 
-https://book.getfoundry.sh/
+---
 
-## Usage
+### How to use it?
 
-### Build
+#### For LPs
 
-```shell
-$ forge build
-```
+You can deposit and later withdraw your liquidity.</br>
 
-### Test
+#### For Traders
 
-```shell
-$ forge test
-```
+After providing collateral in USDC, you are eligible to borrow assets. </br></br>
+The leverege on your borrowed tokens must not exceed 20x. </br></br>
 
-### Format
-
-```shell
-$ forge fmt
-```
-
-### Gas Snapshots
-
-```shell
-$ forge snapshot
-```
-
-### Anvil
-
-```shell
-$ anvil
-```
-
-### Deploy
-
-```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
-```
-
-### Cast
-
-```shell
-$ cast <subcommand>
-```
-
-### Help
-
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
-```
+Otherwise, liquidation will occur to ensure the debt cannot be larger tham the collateral.
