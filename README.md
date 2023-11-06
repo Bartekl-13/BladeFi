@@ -1,30 +1,66 @@
-# BladeFi
+## Foundry
 
-## A simplified perpetuals DeFi protocol.
+**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
 
----
+Foundry consists of:
 
-### How does it work?
+-   **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
+-   **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
+-   **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
+-   **Chisel**: Fast, utilitarian, and verbose solidity REPL.
 
-BladeFi is a perpetuals protocol, which allows users (traders) to use leverage for their long/short positions.
-</br></br>
-The liquidity in the protocol is provided by LPs - liquidity providers, who earn share tokens with a 1:1 ratio to supplied tokens.
-</br></br>
-In this simplified implementation of a protocol, no fees or P&L payouts are calculated.
-</br></br>
-The realtime value of liquidity pools and open interest are tracked, to ensure no money meant for a beneficiary of a successful trade is taken out of the system before payout.
+## Documentation
 
----
+https://book.getfoundry.sh/
 
-### How to use it?
+## Usage
 
-#### For LPs
+### Build
 
-You can deposit and later withdraw your liquidity.</br>
+```shell
+$ forge build
+```
 
-#### For Traders
+### Test
 
-After providing collateral in USDC, you are eligible to borrow assets. </br></br>
-The leverege on your borrowed tokens must not exceed 20x. </br></br>
+```shell
+$ forge test
+```
 
-Otherwise, liquidation will occur to ensure the debt cannot be larger tham the collateral.
+### Format
+
+```shell
+$ forge fmt
+```
+
+### Gas Snapshots
+
+```shell
+$ forge snapshot
+```
+
+### Anvil
+
+```shell
+$ anvil
+```
+
+### Deploy
+
+```shell
+$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
+```
+
+### Cast
+
+```shell
+$ cast <subcommand>
+```
+
+### Help
+
+```shell
+$ forge --help
+$ anvil --help
+$ cast --help
+```
