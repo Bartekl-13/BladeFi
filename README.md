@@ -20,11 +20,14 @@ The realtime value of liquidity pools and open interest are tracked, to ensure n
 
 #### For LPs
 
-You can deposit and later withdraw your liquidity.</br>
+You can deposit USDC to provide liquidity by using the `deposit()` function inherited from the ERC4626 Tokenized Vault Standard.</br>
+
+Withdrawal is possible through inherited `withdraw()` function, or by swapping share tokens for the corresponding assets (USDC) using the inherited `redeem()` function. This functionality is limited by the assets meant for the traders - you can't withdraw your liquidity just before a trader sold with profit.
 
 #### For Traders
 
-After providing collateral in USDC, you are eligible to borrow assets. </br></br>
-The leverege on your borrowed tokens must not exceed 20x. </br></br>
+After providing collateral in USDC, you are eligible to borrow assets. </br>
+
+The leverege on your borrowed tokens must not exceed 20x. </br>
 
 Otherwise, liquidation will occur to ensure the debt cannot be larger tham the collateral.
