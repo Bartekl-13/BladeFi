@@ -8,7 +8,7 @@
 
 BladeFi is a perpetuals protocol, which allows users (traders) to use leverage for their long/short positions.
 </br></br>
-The liquidity in the protocol is provided by LPs - liquidity providers, who earn share tokens with a 1:1 ratio to supplied tokens.
+The liquidity in the protocol is provided by LPs - liquidity providers, who earn share tokens (vUSDC) with a 1:1 ratio to supplied tokens (USDC).
 </br></br>
 In this simplified implementation of a protocol, no fees or P&L payouts are calculated.
 </br></br>
@@ -30,4 +30,8 @@ After providing collateral in USDC, you are eligible to borrow assets. </br>
 
 The leverege on your borrowed tokens must not exceed 20x. </br>
 
-Otherwise, liquidation will occur to ensure the debt cannot be larger tham the collateral.
+### Warning!
+
+No liquidation mechanism is implemented! </br>
+
+Profit and losses are not realised, only accounted for when LPs are withdrawing liquidity.
