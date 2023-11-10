@@ -4,6 +4,8 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
 import {USDC} from "./USDC.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {AggregatorV3Interface} from "@chainlink/contracts/scr/v0.8/interfaces/AggregatorV3Interface.sol";
+
 
 interface AutomationCompatibleInterface {
     /**
@@ -65,6 +67,7 @@ contract BladeFi is AutomationCompatibleInterface, ERC4626, ReentrancyGuard {
     }
 
     address private immutable i_usdc;
+    address private immutable i_priceFeed;
 
     // mapping of LPs to their share tokens (vUSDC)
     mapping(address => uint256) public s_shareHolder;
@@ -91,10 +94,16 @@ contract BladeFi is AutomationCompatibleInterface, ERC4626, ReentrancyGuard {
     ///////////////////
     //// Functions ////
     ///////////////////
+
+    // USDC/USD sepolia price feed: 0xA2F78ab2355fe2f984D808B5CeE7FD0A93D5270E
+    // BTC/USD sepolia price feed: 0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee43
     constructor(
         IERC20 _asset,
         string memory _name,
-        string memory _symbol
+        string memory _symbol,
+        address tokenAddress,
+        address priceFeedAddress,
+        address usdcAddress
     ) ERC4626(_asset) ERC20(_name, _symbol) {
         i_usdc = asset();
     }
@@ -230,4 +239,25 @@ contract BladeFi is AutomationCompatibleInterface, ERC4626, ReentrancyGuard {
     ) external override returns (bool upkeepNeeded, bytes memory performData) {}
 
     function performUpkeep(bytes calldata performData) external override {}
+
+    function _getAccountInformation(address user) private view returns(uint256 totalBorrowed, uint256 collateralValueInUsd){ 
+        totalBorrowed = s_positions[user][amount];
+        collateralValueInUsd = getAccountCollateralValue(user);
+    }
+
+    function _healthFactor(address user) private view returns(uint256) {}
+
+    function _revertIfHealthFactorIsBroken(address user) internal view returns() {
+
+    }
+
+    function getAccountCollateralValue(address user) public view returns(uint256) {
+        uint256 amount = s_collateral[user];
+        totalCollateralValueInUsd += 
+    }
+
+    function getUsdValue(address token, uint256 amount) public view returns(uint256) {
+       AggregatorV3Interface priceFeed = AggregatorV3Interface(i_priceFeed);
+       (,int256 price,,,) = priceFeed.latestRoundData();
+    }
 }
