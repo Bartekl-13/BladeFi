@@ -4,55 +4,55 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
 import {USDC} from "./USDC.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import {AggregatorV3Interface} from "@chainlink/contracts/scr/v0.8/interfaces/AggregatorV3Interface.sol";
+import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
 
+// interface AutomationCompatibleInterface {
+//     /**
+//      * @notice method that is simulated by the keepers to see if any work actually
+//      * needs to be performed. This method does does not actually need to be
+//      * executable, and since it is only ever simulated it can consume lots of gas.
+//      * @dev To ensure that it is never called, you may want to add the
+//      * cannotExecute modifier from KeeperBase to your implementation of this
+//      * method.
+//      * @param checkData specified in the upkeep registration so it is always the
+//      * same for a registered upkeep. This can easily be broken down into specific
+//      * arguments using `abi.decode`, so multiple upkeeps can be registered on the
+//      * same contract and easily differentiated by the contract.
+//      * @return upkeepNeeded boolean to indicate whether the keeper should call
+//      * performUpkeep or not.
+//      * @return performData bytes that the keeper should call performUpkeep with, if
+//      * upkeep is needed. If you would like to encode data to decode later, try
+//      * `abi.encode`.
+//      */
+//     function checkUpkeep(
+//         bytes calldata checkData
+//     ) external returns (bool upkeepNeeded, bytes memory performData);
 
-interface AutomationCompatibleInterface {
-    /**
-     * @notice method that is simulated by the keepers to see if any work actually
-     * needs to be performed. This method does does not actually need to be
-     * executable, and since it is only ever simulated it can consume lots of gas.
-     * @dev To ensure that it is never called, you may want to add the
-     * cannotExecute modifier from KeeperBase to your implementation of this
-     * method.
-     * @param checkData specified in the upkeep registration so it is always the
-     * same for a registered upkeep. This can easily be broken down into specific
-     * arguments using `abi.decode`, so multiple upkeeps can be registered on the
-     * same contract and easily differentiated by the contract.
-     * @return upkeepNeeded boolean to indicate whether the keeper should call
-     * performUpkeep or not.
-     * @return performData bytes that the keeper should call performUpkeep with, if
-     * upkeep is needed. If you would like to encode data to decode later, try
-     * `abi.encode`.
-     */
-    function checkUpkeep(
-        bytes calldata checkData
-    ) external returns (bool upkeepNeeded, bytes memory performData);
+//     /**
+//      * @notice method that is actually executed by the keepers, via the registry.
+//      * The data returned by the checkUpkeep simulation will be passed into
+//      * this method to actually be executed.
+//      * @dev The input to this method should not be trusted, and the caller of the
+//      * method should not even be restricted to any single registry. Anyone should
+//      * be able call it, and the input should be validated, there is no guarantee
+//      * that the data passed in is the performData returned from checkUpkeep. This
+//      * could happen due to malicious keepers, racing keepers, or simply a state
+//      * change while the performUpkeep transaction is waiting for confirmation.
+//      * Always validate the data passed in.
+//      * @param performData is the data which was passed back from the checkData
+//      * simulation. If it is encoded, it can easily be decoded into other types by
+//      * calling `abi.decode`. This data should not be trusted, and should be
+//      * validated against the contract's current state.
+//      */
+//     function performUpkeep(bytes calldata performData) external;
+// }
 
-    /**
-     * @notice method that is actually executed by the keepers, via the registry.
-     * The data returned by the checkUpkeep simulation will be passed into
-     * this method to actually be executed.
-     * @dev The input to this method should not be trusted, and the caller of the
-     * method should not even be restricted to any single registry. Anyone should
-     * be able call it, and the input should be validated, there is no guarantee
-     * that the data passed in is the performData returned from checkUpkeep. This
-     * could happen due to malicious keepers, racing keepers, or simply a state
-     * change while the performUpkeep transaction is waiting for confirmation.
-     * Always validate the data passed in.
-     * @param performData is the data which was passed back from the checkData
-     * simulation. If it is encoded, it can easily be decoded into other types by
-     * calling `abi.decode`. This data should not be trusted, and should be
-     * validated against the contract's current state.
-     */
-    function performUpkeep(bytes calldata performData) external;
-}
-
-contract BladeFi is AutomationCompatibleInterface, ERC4626, ReentrancyGuard {
+contract BladeFi is ERC4626, ReentrancyGuard {
     //////////////
     /// Errors ///
     //////////////
     error BladeFi__TransferFailed();
+    error BladeFi__MaxLeverageExceeded();
 
     /////////////////////////
     //// State Variables ////
@@ -60,14 +60,15 @@ contract BladeFi is AutomationCompatibleInterface, ERC4626, ReentrancyGuard {
 
     // struct for managing positions
     struct Position {
-        address trader;
-        uint256 amount;
+        uint256 longAmount;
+        uint256 shortAmount;
         uint256 leverage;
         uint256 pnl;
     }
 
     address private immutable i_usdc;
-    address private immutable i_priceFeed;
+    address private immutable i_btc;
+    address public latestTrader;
 
     // mapping of LPs to their share tokens (vUSDC)
     mapping(address => uint256) public s_shareHolder;
@@ -75,11 +76,21 @@ contract BladeFi is AutomationCompatibleInterface, ERC4626, ReentrancyGuard {
     mapping(address => Position) public s_positions;
     // mapping of traders to their collateral (USDC)
     mapping(address => uint256) public s_collateral;
+    // mapping of price feeds
+    mapping(address => address) public s_priceFeeds;
 
-    uint256 public totalCollateral;
     uint256 public reservedLiquidity;
-    uint256 public pnl;
+    uint256 private constant ADDITIONAL_FEED_PRECISION = 1e10;
+    uint256 private constant PRECISION = 1e18;
 
+    uint256 public totalLqDepositedInUsd;
+    uint256 public totalLqDepositedInTokens;
+    uint256 public longOpenInterestInUsd;
+    uint256 public longOpenInterestInTokens;
+    uint256 public shortOpenInterestInUsd;
+    uint256 public shortOpenInterestInTokens;
+
+    bool newDeposit;
     //////////////////
     ///// Events /////
     //////////////////
@@ -91,6 +102,24 @@ contract BladeFi is AutomationCompatibleInterface, ERC4626, ReentrancyGuard {
         uint256 amount
     );
 
+    /////////////////
+    /// Modifiers ///
+    /////////////////
+
+    /**
+     * @notice modifier to check if max leverage is exceeded
+     * At the same time checks if user has ANY collateral
+     */
+    modifier isLeverageAcceptable(uint256 amountToBorrow, address trader) {
+        if (
+            getAccountCollateralValue(trader) * 20 >=
+            getUsdValue(i_btc, amountToBorrow)
+        ) {
+            revert BladeFi__MaxLeverageExceeded();
+        }
+        _;
+    }
+
     ///////////////////
     //// Functions ////
     ///////////////////
@@ -98,48 +127,16 @@ contract BladeFi is AutomationCompatibleInterface, ERC4626, ReentrancyGuard {
     // USDC/USD sepolia price feed: 0xA2F78ab2355fe2f984D808B5CeE7FD0A93D5270E
     // BTC/USD sepolia price feed: 0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee43
     constructor(
-        IERC20 _asset,
+        ERC20 _asset,
+        address _assetToBorrow,
+        address[] memory priceFeedAddresses,
         string memory _name,
-        string memory _symbol,
-        address tokenAddress,
-        address priceFeedAddress,
-        address usdcAddress
+        string memory _symbol
     ) ERC4626(_asset) ERC20(_name, _symbol) {
-        i_usdc = asset();
-    }
-
-    /**
-     * @notice overriding view function from ERC4626 library
-     */
-    function totalAssets() public view override returns (uint256) {
-        uint256 total = totalDeposits() - totalPnLOfTraders();
-        return total;
-    }
-
-    function totalDeposits() public view returns (uint256) {
-        return totalCollateral;
-    }
-
-    function totalPnLOfTraders() public view returns (uint256) {
-        return pnl;
-    }
-
-    function depositCollateral(uint256 amountCollateral) public nonReentrant {
-        // require the deposit to be greater than zero
-        require(amountCollateral > 0, "Deposit must be greater than zero");
-        // increase the trader's collateral
-        s_collateral[msg.sender] += amountCollateral;
-        emit CollateralDeposited(msg.sender, amountCollateral);
-        bool success = IERC20(i_usdc).transferFrom(
-            msg.sender,
-            address(this),
-            amountCollateral
-        );
-        if (!success) {
-            revert BladeFi__TransferFailed();
-        }
-        // update the total collateral in this contract
-        totalCollateral += amountCollateral;
+        i_usdc = address(_asset);
+        i_btc = address(_assetToBorrow);
+        s_priceFeeds[i_usdc] = address(priceFeedAddresses[0]);
+        s_priceFeeds[i_btc] = address(priceFeedAddresses[1]);
     }
 
     /**
@@ -167,6 +164,9 @@ contract BladeFi is AutomationCompatibleInterface, ERC4626, ReentrancyGuard {
         deposit(_assets, msg.sender);
         // Increase the share of the user
         s_shareHolder[msg.sender] += _assets;
+        newDeposit = true;
+        totalLqDepositedInUsd += getUsdValue(i_usdc, _assets);
+        totalLqDepositedInTokens += _assets;
     }
 
     /**
@@ -183,81 +183,114 @@ contract BladeFi is AutomationCompatibleInterface, ERC4626, ReentrancyGuard {
         require(shares > 0, "withdraw must be greater than Zero");
         // Checks that the _receiver address is not zero.
         require(receiver != address(0), "Zero Address");
-        // checks that the caller is a shareholder
-        require(s_shareHolder[msg.sender] > 0, "Not a shareHolder");
-        // checks that the caller has more shares than they are trying to withdraw.
-        require(s_shareHolder[msg.sender] >= shares, "Not enough shares");
-        // Calculate 10% yield on the withdraw amount
+        // checks that the caller is a shareholder and has enough shares
+        require(s_shareHolder[msg.sender] > 0, "Not enough shares");
+
         _withdraw(caller, receiver, owner, assets, shares);
 
         s_shareHolder[msg.sender] -= shares;
     }
 
-    //   /**
-    //  * @dev This is the function that the Chainlink Automation nodes call to see if it's time to perform an upkeep.
-    //  *  The following should be true to return true:
-    //  * 1. The time interval has passed between raffle runs
-    //  * 2. The raffle is in the OPEN state
-    //  * 3. Contract has ETH (players)
-    //  * 4. (Implicit) The subscription is funded with LINK
-    //  */
+    function depositCollateral(uint256 amountCollateral) public nonReentrant {
+        // require the deposit to be greater than zero
+        require(amountCollateral > 0, "Deposit must be greater than zero");
+        // increase the trader's collateral
+
+        s_collateral[msg.sender] += amountCollateral;
+        emit CollateralDeposited(msg.sender, amountCollateral);
+        bool success = IERC20(i_usdc).transferFrom(
+            msg.sender,
+            address(this),
+            amountCollateral
+        );
+        if (!success) {
+            revert BladeFi__TransferFailed();
+        }
+        // update the total collateral in this contract
+        latestTrader = msg.sender;
+    }
+
+    function openLong(
+        uint256 amount
+    ) public nonReentrant isLeverageAcceptable(amount, msg.sender) {
+        s_positions[msg.sender].longAmount = amount;
+        s_positions[msg.sender].leverage =
+            getUsdValue(i_btc, amount) /
+            getAccountCollateralValue(msg.sender);
+        updateLongOpenInterest(amount);
+    }
+
+    function openShort(
+        uint256 amount
+    ) public nonReentrant isLeverageAcceptable(amount, msg.sender) {
+        s_positions[msg.sender].shortAmount = amount;
+        s_positions[msg.sender].leverage =
+            getUsdValue(i_btc, amount) /
+            getAccountCollateralValue(msg.sender);
+        updateShortOpenInterest(amount);
+    }
+
+    function updateLongOpenInterest(uint256 amount) internal {
+        longOpenInterestInUsd += getUsdValue(i_btc, amount);
+        longOpenInterestInTokens += amount;
+    }
+
+    function updateShortOpenInterest(uint256 amount) internal {
+        shortOpenInterestInUsd += getUsdValue(i_btc, amount);
+        shortOpenInterestInTokens += amount;
+    }
+
     // function checkUpkeep(
-    //     bytes memory /* checkData */
-    // ) public view returns (bool upKeepNeeded, bytes memory /* performData */) {
-    //     bool timeHasPassed = (block.timestamp - s_lastTimestamp) >= i_interval;
-    //     bool isOpen = RaffleState.OPEN == s_raffleState;
-    //     bool hasBalance = address(this).balance > 0;
-    //     bool hasPlayers = s_players.length > 0;
-    //     upKeepNeeded = (timeHasPassed && isOpen && hasBalance && hasPlayers);
-    //     return (upKeepNeeded, "0x0");
+    //     bytes calldata checkData
+    // ) external override returns (bool upkeepNeeded, bytes memory performData) {
+    //     bool depositHappened = newDeposit;
+
+    //     upkeepNeeded = (depositHappened);
+    //     return (upkeepNeeded, "0x0");
     // }
 
-    // // Get a random number, use the random number to pick a player
-    // // Be automatically called
-    // function performUpkeep(bytes calldata /* performData */) external {
-    //     (bool upKeepNeeded, ) = checkUpkeep("");
-    //     if (!upKeepNeeded) {
-    //         revert Raffle__UpkeepNotNeeded(
-    //             address(this).balance,
-    //             s_players.length,
-    //             uint256(s_raffleState)
-    //         );
+    // function performUpkeep(bytes calldata performData) external override {
+    //     if (!newDeposit) {} else {
+    //         newDeposit = false;
     //     }
-    //     s_raffleState = RaffleState.CALCULATING; // Thanks to that, while calculating people would be unable to enter the raffle
-    //     uint256 requestId = i_vrfCoordinator.requestRandomWords(
-    //         i_gasLane,
-    //         i_subscriptionId,
-    //         REQUEST_CONFIRMATIONS,
-    //         i_callbackGasLimit,
-    //         NUM_WORDS
-    //     );
-
-    //     emit RequestedRaffleWinner(requestId);
     // }
-    function checkUpkeep(
-        bytes calldata checkData
-    ) external override returns (bool upkeepNeeded, bytes memory performData) {}
 
-    function performUpkeep(bytes calldata performData) external override {}
-
-    function _getAccountInformation(address user) private view returns(uint256 totalBorrowed, uint256 collateralValueInUsd){ 
-        totalBorrowed = s_positions[user][amount];
-        collateralValueInUsd = getAccountCollateralValue(user);
+    /**
+     * @notice overriding view function from ERC4626 library
+     */
+    function totalAssets() public view override returns (uint256) {
+        uint256 total = uint256(int256(totalDeposits()) - totalPnLOfTraders());
+        return total;
     }
 
-    function _healthFactor(address user) private view returns(uint256) {}
-
-    function _revertIfHealthFactorIsBroken(address user) internal view returns() {
-
+    function totalDeposits() public view returns (uint256) {
+        return totalLqDepositedInUsd;
     }
 
-    function getAccountCollateralValue(address user) public view returns(uint256) {
+    function totalPnLOfTraders() public view returns (int256) {
+        int256 totalPnl = int256(longOpenInterestInUsd) -
+            int256(shortOpenInterestInUsd);
+        return totalPnl;
+    }
+
+    function getAccountCollateralValue(
+        address user
+    ) public view returns (uint256 totalCollateralValueInUsd) {
         uint256 amount = s_collateral[user];
-        totalCollateralValueInUsd += 
+        totalCollateralValueInUsd += getUsdValue(i_usdc, amount);
+
+        return totalCollateralValueInUsd;
     }
 
-    function getUsdValue(address token, uint256 amount) public view returns(uint256) {
-       AggregatorV3Interface priceFeed = AggregatorV3Interface(i_priceFeed);
-       (,int256 price,,,) = priceFeed.latestRoundData();
+    function getUsdValue(
+        address token,
+        uint256 amount
+    ) public view returns (uint256) {
+        AggregatorV3Interface priceFeed = AggregatorV3Interface(
+            s_priceFeeds[token]
+        );
+        (, int256 price, , , ) = priceFeed.latestRoundData();
+        return
+            ((uint256(price) * ADDITIONAL_FEED_PRECISION) * amount) / PRECISION;
     }
 }
