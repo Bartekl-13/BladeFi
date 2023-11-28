@@ -34,4 +34,6 @@ contract ERC20Mock is ERC20 {
     ) public {
         _approve(owner, spender, value);
     }
+
+    function test() public {}
 }

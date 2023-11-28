@@ -6,91 +6,7 @@ import {USDC} from "./USDC.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
 
-// interface AutomationCompatibleInterface {
-//     /**
-//      * @notice method that is simulated by the keepers to see if any work actually
-//      * needs to be performed. This method does does not actually need to be
-//      * executable, and since it is only ever simulated it can consume lots of gas.
-//      * @dev To ensure that it is never called, you may want to add the
-//      * cannotExecute modifier from KeeperBase to your implementation of this
-//      * method.
-//      * @param checkData specified in the upkeep registration so it is always the
-//      * same for a registered upkeep. This can easily be broken down into specific
-//      * arguments using `abi.decode`, so multiple upkeeps can be registered on the
-//      * same contract and easily differentiated by the contract.
-//      * @return upkeepNeeded boolean to indicate whether the keeper should call
-//      * performUpkeep or not.
-//      * @return performData bytes that the keeper should call performUpkeep with, if
-//      * upkeep is needed. If you would like to encode data to decode later, try
-//      * `abi.encode`.
-//      */
-//     function checkUpkeep(
-//         bytes calldata checkData
-//     ) external returns (bool upkeepNeeded, bytes memory performData);
-
-//     /**
-//      * @notice method that is actually executed by the keepers, via the registry.
-//      * The data returned by the checkUpkeep simulation will be passed into
-//      * this method to actually be executed.
-//      * @dev The input to this method should not be trusted, and the caller of the
-//      * method should not even be restricted to any single registry. Anyone should
-//      * be able call it, and the input should be validated, there is no guarantee
-//      * that the data passed in is the performData returned from checkUpkeep. This
-//      * could happen due to malicious keepers, racing keepers, or simply a state
-//      * change while the performUpkeep transaction is waiting for confirmation.
-//      * Always validate the data passed in.
-//      * @param performData is the data which was passed back from the checkData
-//      * simulation. If it is encoded, it can easily be decoded into other types by
-//      * calling `abi.decode`. This data should not be trusted, and should be
-//      * validated against the contract's current state.
-//      */
-//     function performUpkeep(bytes calldata performData) external;
-// }
-
 contract BladeFi is ERC4626, ReentrancyGuard {
-    //////////////
-    /// Errors ///
-    //////////////
-    error BladeFi__TransferFailed();
-    error BladeFi__MaxLeverageExceeded();
-
-    /////////////////////////
-    //// State Variables ////
-    /////////////////////////
-
-    // struct for managing positions
-    struct Position {
-        uint256 longAmount;
-        uint256 shortAmount;
-        uint256 leverage;
-        uint256 pnl;
-    }
-
-    address private immutable i_usdc;
-    address private immutable i_btc;
-    address public latestTrader;
-
-    // mapping of LPs to their share tokens (vUSDC)
-    mapping(address => uint256) public s_shareHolder;
-    // mapping of traders to their positions
-    mapping(address => Position) public s_positions;
-    // mapping of traders to their collateral (USDC)
-    mapping(address => uint256) public s_collateral;
-    // mapping of price feeds
-    mapping(address => address) public s_priceFeeds;
-
-    uint256 public reservedLiquidity;
-    uint256 private constant ADDITIONAL_FEED_PRECISION = 1e10;
-    uint256 private constant PRECISION = 1e18;
-
-    uint256 public totalLqDepositedInUsd;
-    uint256 public totalLqDepositedInTokens;
-    uint256 public longOpenInterestInUsd;
-    uint256 public longOpenInterestInTokens;
-    uint256 public shortOpenInterestInUsd;
-    uint256 public shortOpenInterestInTokens;
-
-    bool newDeposit;
     //////////////////
     ///// Events /////
     //////////////////
@@ -101,7 +17,58 @@ contract BladeFi is ERC4626, ReentrancyGuard {
         address token,
         uint256 amount
     );
+    event LongPositionOpened(address indexed user, uint256 indexed amount);
+    event ShortPositionOpened(address indexed user, uint256 indexed amount);
 
+    //////////////
+    /// Errors ///
+    //////////////
+    error BladeFi__TransferFailed();
+    error BladeFi__MaxLeverageExceeded();
+    error BladeFi__NotEnoughShares();
+    error BladeFi__NotEnoughLiquidity();
+
+    ///////////////////////////
+    //// Type Declarations ////
+    ///////////////////////////
+
+    // A struct for managing positions
+    struct Position {
+        uint256 longAmount;
+        uint256 shortAmount;
+        uint256 leverage;
+        uint256 pnl;
+    }
+
+    /////////////////////////
+    //// State Variables ////
+    /////////////////////////
+
+    address public immutable i_usdc;
+    address public immutable i_btc;
+
+    uint256 private constant ADDITIONAL_FEED_PRECISION = 1e10;
+    uint256 private constant PRECISION = 1e18;
+
+    uint256 public totalLqDepositedInUsd;
+    uint256 public totalLqDepositedInTokens;
+
+    uint256 public longOpenInterestInUsd;
+    uint256 public longOpenInterestInTokens;
+
+    uint256 public shortOpenInterestInUsd;
+    uint256 public shortOpenInterestInTokens;
+
+    bool newDeposit;
+
+    // mapping of LPs to their share tokens (vUSDC)
+    mapping(address => uint256) public s_shareHolder;
+    // mapping of traders to their positions
+    mapping(address => Position) public s_positions;
+    // mapping of traders to their collateral (USDC)
+    mapping(address => uint256) public s_collateral;
+    // mapping of price feeds
+    mapping(address => address) public s_priceFeeds;
     /////////////////
     /// Modifiers ///
     /////////////////
@@ -112,10 +79,17 @@ contract BladeFi is ERC4626, ReentrancyGuard {
      */
     modifier isLeverageAcceptable(uint256 amountToBorrow, address trader) {
         if (
-            getAccountCollateralValue(trader) * 20 >=
+            getAccountCollateralValue(trader) * 20 <
             getUsdValue(i_btc, amountToBorrow)
         ) {
             revert BladeFi__MaxLeverageExceeded();
+        }
+        _;
+    }
+
+    modifier enoughLiquidityForNewPositions() {
+        if (totalAssets() == 0) {
+            revert BladeFi__NotEnoughLiquidity();
         }
         _;
     }
@@ -140,33 +114,30 @@ contract BladeFi is ERC4626, ReentrancyGuard {
     }
 
     /**
-     * TODO:
-     * 1. Function for opening a position - long or short
-     * 2. Base the amount of BTC available to borrow on the collateral and Chainlink Price Feed of BTC/USD,
-     * let the value of USDC be a constant 1 USD
-     *
-     * If max leverage = 20: maxAssetsBorrowed = collateral * 20
-     * if (leverage > 20) {
-     *    revert;
-     * }
-     *
-     * 3. Function to increase a position - modify Position struct according to the new pricefeed
-     * */
-
-    /**
      * @notice function to deposit assets and receive vault token in exchange
      * @param _assets amount of the asset token
      */
     function _deposit(uint _assets) public {
         // checks that the deposited amount is greater than zero.
-        require(_assets > 0, "Deposit less than Zero");
-        // calling the deposit function ERC-4626 library to perform all the functionality
-        deposit(_assets, msg.sender);
+        require(_assets > 0, "Deposit less than zero");
+
         // Increase the share of the user
         s_shareHolder[msg.sender] += _assets;
         newDeposit = true;
         totalLqDepositedInUsd += getUsdValue(i_usdc, _assets);
         totalLqDepositedInTokens += _assets;
+        // calling the deposit function ERC-4626 library to perform all the functionality
+        deposit(_assets, msg.sender);
+    }
+
+    function withdraw(
+        address caller,
+        address receiver,
+        address owner,
+        uint256 assets,
+        uint256 shares
+    ) public {
+        _withdraw(caller, receiver, owner, assets, shares);
     }
 
     /**
@@ -180,24 +151,23 @@ contract BladeFi is ERC4626, ReentrancyGuard {
         uint256 shares
     ) internal override {
         // checks that the deposited amount is greater than zero.
-        require(shares > 0, "withdraw must be greater than Zero");
+        require(shares > 0, "Can't withdraw 0 shares");
         // Checks that the _receiver address is not zero.
-        require(receiver != address(0), "Zero Address");
+        require(receiver != address(0), "Zero address can't be a receiver");
         // checks that the caller is a shareholder and has enough shares
-        require(s_shareHolder[msg.sender] > 0, "Not enough shares");
-
-        _withdraw(caller, receiver, owner, assets, shares);
-
+        if (!(s_shareHolder[msg.sender] > 0)) {
+            revert BladeFi__NotEnoughShares();
+        }
         s_shareHolder[msg.sender] -= shares;
+        super._withdraw(caller, receiver, owner, assets, shares);
     }
 
     function depositCollateral(uint256 amountCollateral) public nonReentrant {
         // require the deposit to be greater than zero
-        require(amountCollateral > 0, "Deposit must be greater than zero");
+        require(amountCollateral > 0, "Collateral less than zero");
         // increase the trader's collateral
-
         s_collateral[msg.sender] += amountCollateral;
-        emit CollateralDeposited(msg.sender, amountCollateral);
+
         bool success = IERC20(i_usdc).transferFrom(
             msg.sender,
             address(this),
@@ -205,29 +175,41 @@ contract BladeFi is ERC4626, ReentrancyGuard {
         );
         if (!success) {
             revert BladeFi__TransferFailed();
+        } else {
+            emit CollateralDeposited(msg.sender, amountCollateral);
         }
-        // update the total collateral in this contract
-        latestTrader = msg.sender;
     }
 
     function openLong(
         uint256 amount
-    ) public nonReentrant isLeverageAcceptable(amount, msg.sender) {
+    )
+        public
+        nonReentrant
+        isLeverageAcceptable(amount, msg.sender)
+        enoughLiquidityForNewPositions
+    {
         s_positions[msg.sender].longAmount = amount;
         s_positions[msg.sender].leverage =
             getUsdValue(i_btc, amount) /
             getAccountCollateralValue(msg.sender);
         updateLongOpenInterest(amount);
+        emit LongPositionOpened(msg.sender, amount);
     }
 
     function openShort(
         uint256 amount
-    ) public nonReentrant isLeverageAcceptable(amount, msg.sender) {
+    )
+        public
+        nonReentrant
+        isLeverageAcceptable(amount, msg.sender)
+        enoughLiquidityForNewPositions
+    {
         s_positions[msg.sender].shortAmount = amount;
         s_positions[msg.sender].leverage =
             getUsdValue(i_btc, amount) /
             getAccountCollateralValue(msg.sender);
         updateShortOpenInterest(amount);
+        emit ShortPositionOpened(msg.sender, amount);
     }
 
     function updateLongOpenInterest(uint256 amount) internal {
@@ -259,8 +241,8 @@ contract BladeFi is ERC4626, ReentrancyGuard {
      * @notice overriding view function from ERC4626 library
      */
     function totalAssets() public view override returns (uint256) {
-        uint256 total = uint256(int256(totalDeposits()) - totalPnLOfTraders());
-        return total;
+        int256 total = int256(totalDeposits()) - totalPnLOfTraders();
+        return (total < 0) ? 0 : uint256(total);
     }
 
     function totalDeposits() public view returns (uint256) {

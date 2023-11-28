@@ -12,7 +12,7 @@ contract DeployBladeFi is Script {
     address[] public priceFeedAddresses;
 
     function run() external returns (USDC, BladeFi, HelperConfig) {
-        HelperConfig helperConfig = new HelperConfig(); // This comes with our mocks!
+        HelperConfig helperConfig = new HelperConfig(); // This comes with mocks!
 
         (
             address wusdcUsdPriceFeed,
