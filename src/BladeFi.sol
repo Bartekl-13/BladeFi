@@ -59,8 +59,6 @@ contract BladeFi is ERC4626, ReentrancyGuard {
     uint256 public shortOpenInterestInUsd;
     uint256 public shortOpenInterestInTokens;
 
-    bool newDeposit;
-
     // mapping of LPs to their share tokens (vUSDC)
     mapping(address => uint256) public s_shareHolder;
     // mapping of traders to their positions
@@ -123,22 +121,13 @@ contract BladeFi is ERC4626, ReentrancyGuard {
 
         // Increase the share of the user
         s_shareHolder[msg.sender] += _assets;
-        newDeposit = true;
+
         totalLqDepositedInUsd += getUsdValue(i_usdc, _assets);
         totalLqDepositedInTokens += _assets;
         // calling the deposit function ERC-4626 library to perform all the functionality
-        deposit(_assets, msg.sender);
+        super.deposit(_assets, msg.sender);
     }
 
-    function withdraw(
-        address caller,
-        address receiver,
-        address owner,
-        uint256 assets,
-        uint256 shares
-    ) public {
-        _withdraw(caller, receiver, owner, assets, shares);
-    }
 
     /**
      * @notice overriding internal function from the ERC4626 library
