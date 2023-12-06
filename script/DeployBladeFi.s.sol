@@ -15,19 +15,20 @@ contract DeployBladeFi is Script {
         HelperConfig helperConfig = new HelperConfig(); // This comes with mocks!
 
         (
-            address wusdcUsdPriceFeed,
+            address usdcUsdPriceFeed,
             address wbtcUsdPriceFeed,
-            address wusdc,
+            address usdc,
             address wbtc,
             uint256 deployerKey
         ) = helperConfig.activeNetworkConfig();
 
-        priceFeedAddresses = [wusdcUsdPriceFeed, wbtcUsdPriceFeed];
+        priceFeedAddresses = [usdcUsdPriceFeed, wbtcUsdPriceFeed];
 
         vm.startBroadcast(deployerKey);
-        ERC20 wusdcToken = ERC20(wusdc);
+        ERC20 usdcToken = ERC20(usdc);
+
         BladeFi bladeFi = new BladeFi(
-            wusdcToken,
+            usdcToken,
             wbtc,
             priceFeedAddresses,
             "VaultUSDC",
@@ -35,6 +36,6 @@ contract DeployBladeFi is Script {
         );
 
         vm.stopBroadcast();
-        return (USDC(wusdc), bladeFi, helperConfig);
+        return (USDC(usdc), bladeFi, helperConfig);
     }
 }

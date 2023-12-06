@@ -14,9 +14,9 @@ contract HelperConfig is Script {
     int256 public constant USDC_USD_PRICE = 1e8;
 
     struct NetworkConfig {
-        address wusdcUsdPriceFeed;
+        address usdcUsdPriceFeed;
         address wbtcUsdPriceFeed;
-        address wusdc;
+        address usdc;
         address wbtc;
         uint256 deployerKey;
     }
@@ -38,10 +38,10 @@ contract HelperConfig is Script {
         returns (NetworkConfig memory sepoliaNetworkConfig)
     {
         sepoliaNetworkConfig = NetworkConfig({
-            wusdcUsdPriceFeed: 0xA2F78ab2355fe2f984D808B5CeE7FD0A93D5270E,
+            usdcUsdPriceFeed: 0xA2F78ab2355fe2f984D808B5CeE7FD0A93D5270E,
             wbtcUsdPriceFeed: 0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee43,
-            wusdc: 0xcBdd3e2833A3123fD35ba3c223e61bE4C29f61fC,
-            wbtc: 0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063,
+            usdc: 0x884b1c96e1b4c4F1D49526028d79947d7DAC1E0A,
+            wbtc: 0x5A0fE8d6A17C3ef65f0Db6c4dC1b221db3808cF8,
             deployerKey: vm.envUint("PRIVATE_KEY")
         });
     }
@@ -67,13 +67,13 @@ contract HelperConfig is Script {
             USDC_USD_PRICE
         );
 
-        ERC20Mock wusdcMock = new ERC20Mock("USDC", "USDC", msg.sender, 1e8);
+        ERC20Mock usdcMock = new ERC20Mock("USDC", "USDC", msg.sender, 1e8);
         vm.stopBroadcast();
 
         anvilNetworkConfig = NetworkConfig({
-            wusdcUsdPriceFeed: address(usdcUsdPriceFeed),
+            usdcUsdPriceFeed: address(usdcUsdPriceFeed),
             wbtcUsdPriceFeed: address(btcUsdPriceFeed),
-            wusdc: address(wusdcMock),
+            usdc: address(usdcMock),
             wbtc: address(wbtcMock),
             deployerKey: DEFAULT_ANVIL_PRIVATE_KEY
         });

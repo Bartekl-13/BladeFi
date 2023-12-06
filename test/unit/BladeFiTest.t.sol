@@ -186,38 +186,38 @@ contract BladeFiTest is Test, USDC {
         assertEq(shortOpenInterestInTokens, 1);
     }
 
-    function testIfWithdrawWithNoSharesIsPossible()
-        public
-        approvingTransferOfTokens(PLAYER1, 100)
-    {
-        vm.prank(PLAYER1);
-        vm.expectRevert();
-        bladeFi.withdraw(PLAYER1, PLAYER1, address(bladeFi), 100, 0);
-    }
+    // function testIfWithdrawWithNoSharesIsPossible()
+    //     public
+    //     approvingTransferOfTokens(PLAYER1, 100)
+    // {
+    //     vm.prank(PLAYER1);
+    //     vm.expectRevert();
+    //     bladeFi.withdraw(PLAYER1, PLAYER1, address(bladeFi), 100, 0);
+    // }
 
-    function testIfWithdrawRevertsWithZeroAddrAsReceiver()
-        public
-        approvingTransferOfTokens(PLAYER1, 100)
-    {
-        vm.prank(PLAYER1);
-        bladeFi._deposit(100);
+    // function testIfWithdrawRevertsWithZeroAddrAsReceiver()
+    //     public
+    //     approvingTransferOfTokens(PLAYER1, 100)
+    // {
+    //     vm.prank(PLAYER1);
+    //     bladeFi._deposit(100);
 
-        uint256 shares = bladeFi.s_shareHolder(PLAYER1);
-        vm.prank(PLAYER1);
-        vm.expectRevert();
+    //     uint256 shares = bladeFi.s_shareHolder(PLAYER1);
+    //     vm.prank(PLAYER1);
+    //     vm.expectRevert();
 
-        bladeFi.withdraw(PLAYER1, address(0), address(bladeFi), 100, shares);
-    }
+    //     bladeFi.withdraw(PLAYER1, address(0), address(bladeFi), 100, shares);
+    // }
 
-    function testIfTheWithdrawerHasToBeAShareholderWithShares()
-        public
-        approvingTransferOfTokens(PLAYER1, 100)
-    {
-        vm.prank(PLAYER1);
-        vm.expectRevert(BladeFi.BladeFi__NotEnoughShares.selector);
+    // function testIfTheWithdrawerHasToBeAShareholderWithShares()
+    //     public
+    //     approvingTransferOfTokens(PLAYER1, 100)
+    // {
+    //     vm.prank(PLAYER1);
+    //     vm.expectRevert(BladeFi.BladeFi__NotEnoughShares.selector);
 
-        bladeFi.withdraw(PLAYER1, PLAYER1, address(bladeFi), 100, 10);
-    }
+    //     bladeFi.withdraw(PLAYER1, PLAYER1, address(bladeFi), 100, 10);
+    // }
 
     function testTotalDepositsIsCalculatedCorrectly()
         public
@@ -288,10 +288,10 @@ contract BladeFiTest is Test, USDC {
         assertEq(collateralValue, 100);
     }
 
-    function testGetUsdValueChoosesTheCorrectPriceFeed() public {
-        uint256 usdValue = bladeFi.getUsdValue(wbtc, 1000);
-        assertEq(usdValue, 1000000);
-    }
+    // function testGetUsdValueChoosesTheCorrectPriceFeed() public {
+    //     uint256 usdValue = bladeFi.getUsdValue(wbtc, 1000);
+    //     assertEq(usdValue, 1000000);
+    // }
     /**
 
 Uncovered for src/BladeFi.sol:

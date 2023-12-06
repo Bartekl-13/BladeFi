@@ -44,8 +44,8 @@ contract BladeFi is ERC4626, ReentrancyGuard {
     //// State Variables ////
     /////////////////////////
 
-    address public immutable i_usdc;
-    address public immutable i_btc;
+    IERC20 public immutable i_usdc;
+    IERC20 public immutable i_wbtc;
 
     uint256 private constant ADDITIONAL_FEED_PRECISION = 1e10;
     uint256 private constant PRECISION = 1e18;
@@ -66,7 +66,7 @@ contract BladeFi is ERC4626, ReentrancyGuard {
     // mapping of traders to their collateral (USDC)
     mapping(address => uint256) public s_collateral;
     // mapping of price feeds
-    mapping(address => address) public s_priceFeeds;
+    mapping(IERC20 => address) public s_priceFeeds;
     /////////////////
     /// Modifiers ///
     /////////////////
@@ -78,7 +78,7 @@ contract BladeFi is ERC4626, ReentrancyGuard {
     modifier isLeverageAcceptable(uint256 amountToBorrow, address trader) {
         if (
             getAccountCollateralValue(trader) * 20 <
-            getUsdValue(i_btc, amountToBorrow)
+            getUsdValue(i_wbtc, amountToBorrow)
         ) {
             revert BladeFi__MaxLeverageExceeded();
         }
@@ -99,16 +99,16 @@ contract BladeFi is ERC4626, ReentrancyGuard {
     // USDC/USD sepolia price feed: 0xA2F78ab2355fe2f984D808B5CeE7FD0A93D5270E
     // BTC/USD sepolia price feed: 0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee43
     constructor(
-        ERC20 _asset,
+        ERC20 _asset, // the underlying asset of the Vault - what is used for deposits
         address _assetToBorrow,
         address[] memory priceFeedAddresses,
-        string memory _name,
-        string memory _symbol
+        string memory _name, // name of the shares token (vUSDC)
+        string memory _symbol // symbol of the shares token (Vault USDC)
     ) ERC4626(_asset) ERC20(_name, _symbol) {
-        i_usdc = address(_asset);
-        i_btc = address(_assetToBorrow);
+        i_usdc = IERC20(_asset);
+        i_wbtc = IERC20(_assetToBorrow);
         s_priceFeeds[i_usdc] = address(priceFeedAddresses[0]);
-        s_priceFeeds[i_btc] = address(priceFeedAddresses[1]);
+        s_priceFeeds[i_wbtc] = address(priceFeedAddresses[1]);
     }
 
     /**
@@ -127,7 +127,6 @@ contract BladeFi is ERC4626, ReentrancyGuard {
         // calling the deposit function ERC-4626 library to perform all the functionality
         super.deposit(_assets, msg.sender);
     }
-
 
     /**
      * @notice overriding internal function from the ERC4626 library
@@ -173,13 +172,12 @@ contract BladeFi is ERC4626, ReentrancyGuard {
         uint256 amount
     )
         public
-        nonReentrant
         isLeverageAcceptable(amount, msg.sender)
         enoughLiquidityForNewPositions
     {
         s_positions[msg.sender].longAmount = amount;
         s_positions[msg.sender].leverage =
-            getUsdValue(i_btc, amount) /
+            getUsdValue(i_wbtc, amount) /
             getAccountCollateralValue(msg.sender);
         updateLongOpenInterest(amount);
         emit LongPositionOpened(msg.sender, amount);
@@ -189,42 +187,26 @@ contract BladeFi is ERC4626, ReentrancyGuard {
         uint256 amount
     )
         public
-        nonReentrant
         isLeverageAcceptable(amount, msg.sender)
         enoughLiquidityForNewPositions
     {
         s_positions[msg.sender].shortAmount = amount;
         s_positions[msg.sender].leverage =
-            getUsdValue(i_btc, amount) /
+            getUsdValue(i_wbtc, amount) /
             getAccountCollateralValue(msg.sender);
         updateShortOpenInterest(amount);
         emit ShortPositionOpened(msg.sender, amount);
     }
 
     function updateLongOpenInterest(uint256 amount) internal {
-        longOpenInterestInUsd += getUsdValue(i_btc, amount);
+        longOpenInterestInUsd += getUsdValue(i_wbtc, amount);
         longOpenInterestInTokens += amount;
     }
 
     function updateShortOpenInterest(uint256 amount) internal {
-        shortOpenInterestInUsd += getUsdValue(i_btc, amount);
+        shortOpenInterestInUsd += getUsdValue(i_wbtc, amount);
         shortOpenInterestInTokens += amount;
     }
-
-    // function checkUpkeep(
-    //     bytes calldata checkData
-    // ) external override returns (bool upkeepNeeded, bytes memory performData) {
-    //     bool depositHappened = newDeposit;
-
-    //     upkeepNeeded = (depositHappened);
-    //     return (upkeepNeeded, "0x0");
-    // }
-
-    // function performUpkeep(bytes calldata performData) external override {
-    //     if (!newDeposit) {} else {
-    //         newDeposit = false;
-    //     }
-    // }
 
     /**
      * @notice overriding view function from ERC4626 library
@@ -254,7 +236,7 @@ contract BladeFi is ERC4626, ReentrancyGuard {
     }
 
     function getUsdValue(
-        address token,
+        IERC20 token,
         uint256 amount
     ) public view returns (uint256) {
         AggregatorV3Interface priceFeed = AggregatorV3Interface(

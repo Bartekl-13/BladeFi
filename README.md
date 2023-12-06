@@ -42,3 +42,4 @@ To implement:
 
 - allow for traders to open a decimal position (for ex. 0.5wbtc)
 - reduce potential precision loss
+- 
